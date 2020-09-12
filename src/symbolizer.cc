@@ -359,7 +359,7 @@ int main(int argc, char *argv[]) {
     auto AddressSymbolized = Dbg.Symbolize(Address);
     if (!AddressSymbolized.has_value()) {
       printf("Symbolization of %" PRIx64 " failed, skipping\n", Address);
-      OutStream << "FAILED SYMBOLIZATION" << std::endl;
+      OutStream << "FAILED SYMBOLIZATION" << '\n';
       NumberFailedSymbolization++;
       continue;
     }
@@ -368,7 +368,7 @@ int main(int argc, char *argv[]) {
     // Write the symbolized address into the output trace.
     //
 
-    OutStream << AddressSymbolized->c_str() << std::endl;
+    OutStream << AddressSymbolized->c_str() << '\n';
     NumberSymbolizedLines++;
   }
 
