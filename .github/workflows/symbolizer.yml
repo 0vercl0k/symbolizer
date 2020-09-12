@@ -1,0 +1,23 @@
+name: Builds
+
+on: [push, pull_request]
+
+jobs:
+  Windows:
+    name: Windows latest
+    runs-on: windows-latest 
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Setup vs prompt
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Build
+      run: msbuild /p:Configuration=Release symbolizer.sln
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: bin64
+        path: src/x64/Release
