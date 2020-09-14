@@ -2,12 +2,12 @@ name: Builds
 
 on: [push, pull_request]
 
-strategy:
-  matrix:
-    platform: ['Win32', 'x64']
-    configuration: ['Debug', 'Release']
-
 jobs:
+  strategy:
+    matrix:
+      fail-fast: false
+      platform: ['Win32', 'x64']
+      configuration: ['Debug', 'Release']
   Windows:
     name: Windows latest
     runs-on: windows-latest 
