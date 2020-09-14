@@ -7,6 +7,7 @@ jobs:
     name: Windows latest
     runs-on: windows-latest 
     strategy:
+      fail-fast: false
       matrix:
         platform: ['x86', 'x64']
         configuration: ['Debug', 'Release']
