@@ -2,6 +2,11 @@ name: Builds
 
 on: [push, pull_request]
 
+strategy:
+  matrix:
+    platform: ['Win32', 'x64']
+    configuration: ['Debug', 'Release']
+
 jobs:
   Windows:
     name: Windows latest
@@ -16,12 +21,12 @@ jobs:
       uses: ilammy/msvc-dev-cmd@v1
 
     - name: Build
-      run: msbuild /p:Configuration=Release /p:Platform=x64 src\symbolizer.sln
+      run: msbuild /p:Configuration=${{ matrix.platform }} /p:Platform=${{ matrix.configuration }} src\symbolizer.sln
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: bin-rel64
+        name: bin-${{ matrix.platform }}.${{matrix.configuration }}
         path: |
-          src/x64/Release/symbolizer.exe
-          src/x64/Release/symbolizer.pdb
+          src/**/symbolizer.exe
+          src/**/symbolizer.pdb
