@@ -5,7 +5,7 @@
 
 ## Overview
 
-This is utility that symbolizes an execution trace via the [dbghelp](https://docs.microsoft.com/en-us/windows/win32/debug/debug-help-library) APIs and a crash-dump. The dbghelp APIs are used to load the crash-dump and symbolizes RIP values by querying available symbols and the crash-dump is used as a reference of the address space.
+This is utility that symbolizes an execution trace via the [dbgeng](https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/debugger-engine-api-overview) APIs and a crash-dump. The dbghelp APIs are used to load the crash-dump and symbolizes RIP values by querying available symbols and the crash-dump is used as a reference of the address space.
 
 Transform the below raw execution trace:
 
