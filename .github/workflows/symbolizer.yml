@@ -3,14 +3,14 @@ name: Builds
 on: [push, pull_request]
 
 jobs:
-  strategy:
-    matrix:
-      fail-fast: false
-      platform: ['Win32', 'x64']
-      configuration: ['Debug', 'Release']
   Windows:
     name: Windows latest
     runs-on: windows-latest 
+    strategy:
+      matrix:
+        fail-fast: false
+        platform: ['Win32', 'x64']
+        configuration: ['Debug', 'Release']
     steps:
     - name: Checkout
       uses: actions/checkout@v2
