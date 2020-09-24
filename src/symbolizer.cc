@@ -3,7 +3,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include "dbgeng_t.h"
-#include <CLI/CLI.hpp> // NOLINT
+#include <CLI/CLI.hpp>
 #include <chrono>
 #include <cinttypes>
 #include <cstdio>
