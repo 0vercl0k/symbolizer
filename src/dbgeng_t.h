@@ -41,11 +41,13 @@ class DbgEng_t {
   // output window.
   //
 
-  class StdioOutputCallbacks_t : public IDebugOutputCallbacks {
+  class StdioOutputCallbacks_t final : public IDebugOutputCallbacks {
   public:
+    virtual ~StdioOutputCallbacks_t() = default;
+
     // IUnknown
     STDMETHODIMP
-    QueryInterface(REFIID InterfaceId, PVOID *Interface) {
+    QueryInterface(REFIID InterfaceId, PVOID *Interface) noexcept override {
       *Interface = NULL;
 
       if (IsEqualIID(InterfaceId, __uuidof(IUnknown)) ||
@@ -57,19 +59,19 @@ class DbgEng_t {
       return E_NOINTERFACE;
     }
 
-    STDMETHODIMP_(ULONG) AddRef() {
+    STDMETHODIMP_(ULONG) AddRef() noexcept override {
       // This class is designed to be static so
       // there's no true refcount.
       return 1;
     }
 
-    STDMETHODIMP_(ULONG) Release() {
+    STDMETHODIMP_(ULONG) Release() noexcept override {
       // This class is designed to be static so
       // there's no true refcount.
       return 0;
     }
 
-    STDMETHODIMP Output(ULONG Mask, PCSTR Text) {
+    STDMETHODIMP Output(ULONG, PCSTR Text) noexcept override {
       printf("%s", Text);
       return S_OK;
     }
@@ -97,7 +99,12 @@ class DbgEng_t {
 #endif
 
 public:
-  explicit DbgEng_t() = default;
+  explicit DbgEng_t() noexcept {};
+
+  DbgEng_t(const DbgEng_t &) = delete;
+  DbgEng_t &operator=(DbgEng_t &) = delete;
+  DbgEng_t(DbgEng_t &&) = delete;
+  DbgEng_t &operator=(DbgEng_t &&) = delete;
 
   ~DbgEng_t() {
     if (Client_) {
@@ -127,7 +134,8 @@ public:
     //
 
     char ExePathBuffer[MAX_PATH];
-    if (!GetModuleFileNameA(nullptr, ExePathBuffer, sizeof(ExePathBuffer))) {
+    if (!GetModuleFileNameA(nullptr, &ExePathBuffer[0],
+                            sizeof(ExePathBuffer))) {
       printf("GetModuleFileNameA failed.\n");
       return false;
     }
@@ -185,21 +193,21 @@ public:
     printf("Initializing the debugger instance..\n");
     HRESULT Status = DebugCreate(__uuidof(IDebugClient), (void **)&Client_);
     if (FAILED(Status)) {
-      printf("DebugCreate failed with hr=%x\n", Status);
+      printf("DebugCreate failed with hr=%lx\n", Status);
       return false;
     }
 
     Status =
         Client_->QueryInterface(__uuidof(IDebugControl), (void **)&Control_);
     if (FAILED(Status)) {
-      printf("QueryInterface/IDebugControl failed with hr=%x\n", Status);
+      printf("QueryInterface/IDebugControl failed with hr=%lx\n", Status);
       return false;
     }
 
     Status =
         Client_->QueryInterface(__uuidof(IDebugSymbols3), (void **)&Symbols_);
     if (FAILED(Status)) {
-      printf("QueryInterface/IDebugSymbols failed with hr=%x\n", Status);
+      printf("QueryInterface/IDebugSymbols failed with hr=%lx\n", Status);
       return false;
     }
 
@@ -211,7 +219,7 @@ public:
     const uint32_t SYMOPT_DEBUG = 0x80000000;
     Status = Symbols_->SetSymbolOptions(SYMOPT_DEBUG);
     if (FAILED(Status)) {
-      printf("IDebugSymbols::SetSymbolOptions failed with hr=%x\n", Status);
+      printf("IDebugSymbols::SetSymbolOptions failed with hr=%lx\n", Status);
       return false;
     }
 
@@ -227,7 +235,7 @@ public:
     const char *DumpFileA = DumpFileString.c_str();
     Status = Client_->OpenDumpFile(DumpFileA);
     if (FAILED(Status)) {
-      printf("OpenDumpFile(h%s) failed with hr=%x\n", DumpFileA, Status);
+      printf("OpenDumpFile(h%s) failed with hr=%lx\n", DumpFileA, Status);
       return false;
     }
 
@@ -243,7 +251,7 @@ public:
 
     Status = WaitForEvent();
     if (FAILED(Status)) {
-      printf("WaitForEvent for OpenDumpFile failed with hr=%x\n", Status);
+      printf("WaitForEvent for OpenDumpFile failed with hr=%lx\n", Status);
       return false;
     }
 
@@ -301,8 +309,8 @@ private:
   //
 
   std::optional<std::string> SymbolizeModoff(const uint64_t SymbolAddress) {
-    const size_t NameSizeMax = MAX_PATH;
-    char Buffer[NameSizeMax];
+    constexpr size_t NameSizeMax = MAX_PATH;
+    char Buffer[NameSizeMax] = {};
 
     //
     // module+offset style.
@@ -313,21 +321,21 @@ private:
     HRESULT Status =
         Symbols_->GetModuleByOffset(SymbolAddress, 0, &Index, &Base);
     if (FAILED(Status)) {
-      printf("GetModuleByOffset failed with hr=%x\n", Status);
+      printf("GetModuleByOffset failed with hr=%lx\n", Status);
       return std::nullopt;
     }
 
     ULONG NameSize;
     Status = Symbols_->GetModuleNameString(DEBUG_MODNAME_MODULE, Index, Base,
-                                           Buffer, NameSizeMax, &NameSize);
+                                           &Buffer[0], NameSizeMax, &NameSize);
     if (FAILED(Status)) {
-      printf("GetModuleNameString failed with hr=%x\n", Status);
+      printf("GetModuleNameString failed with hr=%lx\n", Status);
       return std::nullopt;
     }
 
     const uint64_t Offset = SymbolAddress - Base;
-    std::snprintf(Buffer, NameSizeMax, "%s+0x%" PRIx64, Buffer, Offset);
-    return Buffer;
+    std::snprintf(&Buffer[0], NameSizeMax, "%s+0x%" PRIx64, &Buffer[0], Offset);
+    return std::string(Buffer);
   }
 
   //
@@ -339,29 +347,30 @@ private:
     // Full symbol style!
     //
 
-    const size_t NameSizeMax = MAX_PATH;
-    char Buffer[NameSizeMax];
+    constexpr size_t NameSizeMax = MAX_PATH;
+    char Buffer[NameSizeMax] = {};
 
     uint64_t Displacement = 0;
     const HRESULT Status = Symbols_->GetNameByOffset(
-        SymbolAddress, Buffer, NameSizeMax, nullptr, &Displacement);
+        SymbolAddress, &Buffer[0], NameSizeMax, nullptr, &Displacement);
     if (FAILED(Status)) {
-      printf("GetNameByOffset failed with hr=%x\n", Status);
+      printf("GetNameByOffset failed with hr=%lx\n", Status);
       return std::nullopt;
     }
 
-    std::snprintf(Buffer, NameSizeMax, "%s+0x%" PRIx64, Buffer, Displacement);
-    return Buffer;
+    std::snprintf(&Buffer[0], NameSizeMax, "%s+0x%" PRIx64, &Buffer[0],
+                  Displacement);
+    return std::string(Buffer);
   }
 
   //
   // Waits for the dbghelp machinery to signal that they are done.
   //
 
-  HRESULT WaitForEvent() const {
-    HRESULT Status = Control_->WaitForEvent(DEBUG_WAIT_DEFAULT, INFINITE);
+  HRESULT WaitForEvent() const noexcept {
+    const HRESULT Status = Control_->WaitForEvent(DEBUG_WAIT_DEFAULT, INFINITE);
     if (FAILED(Status)) {
-      printf("Execute::WaitForEvent failed with %x\n", Status);
+      printf("Execute::WaitForEvent failed with %lx\n", Status);
     }
     return Status;
   }
