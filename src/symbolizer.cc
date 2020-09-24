@@ -51,34 +51,34 @@ struct Opts_t {
   fs::path CrashdumpPath;
 
   //
-  // This is the style used to output traces.
-  //
-
-  TraceStyle_t Style;
-
-  //
   // Skip a number of lines.
   //
 
-  uint64_t Skip;
+  uint64_t Skip = 0;
 
   //
   // The maximum amount of lines to process per file.
   //
 
-  uint64_t Max;
+  uint64_t Max = 0;
+
+  //
+  // This is the style used to output traces.
+  //
+
+  TraceStyle_t Style = TraceStyle_t::FullSymbol;
 
   //
   // Allow symbolizer to overwrite output traces.
   //
 
-  bool Overwrite;
+  bool Overwrite = false;
 
   //
   // Include line numbers in the output traces.
   //
 
-  bool LineNumbers;
+  bool LineNumbers = false;
 };
 
 //
@@ -147,7 +147,6 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
 
   uint64_t NumberSymbolizedLines = 0;
   uint64_t NumberFailedSymbolization = 0;
-  auto Before = chrono::high_resolution_clock::now();
   std::string Line;
   for (uint64_t LineNumber = 0; std::getline(TraceFile, Line); LineNumber++) {
 
@@ -156,7 +155,7 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
     //
 
     if (NumberSymbolizedLines >= Opts.Max) {
-      printf("Hit the maximum number %" PRId64 ", breaking out\n", Opts.Max);
+      printf("Hit the maximum number %" PRIu64 ", breaking out\n", Opts.Max);
       break;
     }
 
@@ -180,7 +179,7 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
 
     auto AddressSymbolized = Dbg.Symbolize(Address, Opts.Style);
     if (!AddressSymbolized.has_value()) {
-      printf("%s:%" PRId64 ": Symbolization of %" PRIx64
+      printf("%s:%" PRIu64 ": Symbolization of %" PRIx64
              " failed ('%s'), skipping\n",
              Input.filename().string().c_str(), LineNumber, Address,
              Line.c_str());
@@ -300,7 +299,7 @@ int main(int argc, char *argv[]) {
   //
 
   printf("Starting to process files..\n");
-  auto Before = chrono::high_resolution_clock::now();
+  const auto Before = chrono::high_resolution_clock::now();
   for (const auto &Input : Inputs) {
 
     //
@@ -370,7 +369,7 @@ int main(int argc, char *argv[]) {
     }
 
     Stats.NumberFiles++;
-    printf("[%" PRId64 " / %zd] %s done\r", Stats.NumberFiles, Inputs.size(),
+    printf("[%" PRIu64 " / %zd] %s done\r", Stats.NumberFiles, Inputs.size(),
            Input.string().c_str());
   }
 
@@ -380,7 +379,7 @@ int main(int argc, char *argv[]) {
   // Calculate the duration.
   //
 
-  auto After = chrono::high_resolution_clock::now();
+  const auto After = chrono::high_resolution_clock::now();
   auto Duration = chrono::duration_cast<chrono::seconds>(After - Before);
 
   const char *Unit = "";
@@ -396,8 +395,8 @@ int main(int argc, char *argv[]) {
   // Yay we made it to the end! Let's dump a few stats out.
   //
 
-  printf("Completed symbolization of %" PRId64 "%s addresses (%" PRId64
-         " failed) in %" PRId64 "s across %" PRId64 " files.\n",
+  printf("Completed symbolization of %" PRIu64 "%s addresses (%" PRIu64
+         " failed) in %" PRId64 "s across %" PRIu64 " files.\n",
          Stats.NumberSymbolizedLines, Unit, Stats.NumberFailedSymbolization,
          Duration.count(), Stats.NumberFiles);
 
