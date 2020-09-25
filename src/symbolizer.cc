@@ -151,10 +151,10 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
   for (uint64_t LineNumber = 0; std::getline(TraceFile, Line); LineNumber++) {
 
     //
-    // Have we hit max yet?
+    // Do we have a max value, and if so have we hit it yet?
     //
 
-    if (NumberSymbolizedLines >= Opts.Max) {
+    if (Opts.Max > 0 && NumberSymbolizedLines >= Opts.Max) {
       printf("Hit the maximum number %" PRIu64 ", breaking out\n", Opts.Max);
       break;
     }
@@ -171,7 +171,7 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
     // Convert the line into an address.
     //
 
-    const uint64_t Address = std::strtoull(Line.c_str(), nullptr, 0);
+    const uint64_t Address = std::strtoull(Line.c_str(), nullptr, 16);
 
     //
     // Symbolize the address.
