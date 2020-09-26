@@ -43,8 +43,6 @@ class DbgEng_t {
 
   class StdioOutputCallbacks_t final : public IDebugOutputCallbacks {
   public:
-    virtual ~StdioOutputCallbacks_t() = default;
-
     // IUnknown
     STDMETHODIMP
     QueryInterface(REFIID InterfaceId, PVOID *Interface) noexcept override {
@@ -277,9 +275,9 @@ public:
     // Slow path, we need to ask dbgeng..
     //
 
-    const auto &Res = Style == TraceStyle_t::Modoff
-                          ? SymbolizeModoff(SymbolAddress)
-                          : SymbolizeFull(SymbolAddress);
+    const auto Res = Style == TraceStyle_t::Modoff
+                         ? SymbolizeModoff(SymbolAddress)
+                         : SymbolizeFull(SymbolAddress);
 
     //
     // If there has been an issue during symbolization, bail as it is not
