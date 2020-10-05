@@ -101,8 +101,6 @@ public:
 
   DbgEng_t(const DbgEng_t &) = delete;
   DbgEng_t &operator=(DbgEng_t &) = delete;
-  DbgEng_t(DbgEng_t &&) = delete;
-  DbgEng_t &operator=(DbgEng_t &&) = delete;
 
   ~DbgEng_t() {
     if (Client_) {
