@@ -97,13 +97,7 @@ class DbgEng_t {
 #endif
 
 public:
-  explicit DbgEng_t() noexcept {};
-
-  DbgEng_t(const DbgEng_t &) = delete;
-  DbgEng_t &operator=(DbgEng_t &) = delete;
-  DbgEng_t(DbgEng_t &&) = delete;
-  DbgEng_t &operator=(DbgEng_t &&) = delete;
-
+  DbgEng_t() = default;
   ~DbgEng_t() {
     if (Client_) {
       Client_->EndSession(DEBUG_END_ACTIVE_DETACH);
@@ -118,6 +112,13 @@ public:
       Symbols_->Release();
     }
   }
+
+  //
+  // Rule of three.
+  //
+
+  DbgEng_t(const DbgEng_t &) = delete;
+  DbgEng_t &operator=(DbgEng_t &) = delete;
 
   //
   // Initialize the COM interfaces and load the crash-dump.
