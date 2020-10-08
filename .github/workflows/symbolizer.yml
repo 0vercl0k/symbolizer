@@ -23,10 +23,25 @@ jobs:
     - name: Build
       run: msbuild /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} src\symbolizer.sln
 
+    - name: Copy dbghelp/symsrv x64
+      if: ${{ matrix.platform == 'x64' }}
+      run: |
+        copy "c:\program Files (x86)\windows kits\10\debuggers\${{ matrix.platform }}\dbghelp.dll" src/x64/${{ matrix.configuration }}
+        copy "c:\program Files (x86)\windows kits\10\debuggers\${{ matrix.platform }}\symsrv.dll" src/x64/${{ matrix.configuration }}
+
+    - name: Copy dbghelp/symsrv x86
+      if: ${{ matrix.platform == 'x86' }}
+      run: |
+        copy "c:\program Files (x86)\windows kits\10\debuggers\${{ matrix.platform }}\dbghelp.dll" src/${{ matrix.configuration }}
+        copy "c:\program Files (x86)\windows kits\10\debuggers\${{ matrix.platform }}\symsrv.dll" src/${{ matrix.configuration }}
+
+
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
         name: bin-${{ matrix.platform }}.${{matrix.configuration }}
         path: |
-          src/**/symbolizer.exe
-          src/**/symbolizer.pdb
+          src/**/${{ matrix.configuration }}/symbolizer.exe
+          src/**/${{ matrix.configuration }}/symbolizer.pdb
+          src/**/${{ matrix.configuration }}/dbghelp.dll
+          src/**/${{ matrix.configuration }}/symsrv.dll
