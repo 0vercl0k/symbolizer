@@ -126,8 +126,8 @@ public:
 
   bool Init(const fs::path &DumpPath) {
     //
-    // Ensure that we both have dbghelp.dll and symsrv.dll in the current
-    // directory otherwise things don't work. cf
+    // Ensure that we have dbghelp.dll / dbgcore.dll / dbgeng.dll /
+    // symsrv.dll in the current directory otherwise things don't work. cf
     // https://docs.microsoft.com/en-us/windows/win32/debug/using-symsrv
     // "Installation"
     //
@@ -140,49 +140,47 @@ public:
     }
 
     //
-    // Let's check if the two dlls exist in the same path as the application.
+    // Let's check if the dlls exist in the same path as the application.
     //
 
     const fs::path ExePath(ExePathBuffer);
     const fs::path ParentDir(ExePath.parent_path());
-    if (!fs::exists(ParentDir / "dbghelp.dll") ||
-        !fs::exists(ParentDir / "symsrv.dll")) {
+    const std::vector<std::string_view> Dlls = {"dbghelp.dll", "symsrv.dll",
+                                                "dbgeng.dll", "dbgcore.dll"};
+    const fs::path DefaultDbgDllLocation(
+        R"(c:\program Files (x86)\windows kits\10\debuggers\)" SYMBOLIZER_ARCH);
+
+    for (const auto &Dll : Dlls) {
+      if (fs::exists(ParentDir / Dll)) {
+        continue;
+      }
 
       //
-      // Apparently they don't. Be nice and try to find them by ourselves.
+      // Apparently it doesn't. Be nice and try to find them by ourselves.
       //
 
-      const fs::path DefaultDbghelpLocation(
-          R"(c:\program Files (x86)\windows kits\10\debuggers\)" SYMBOLIZER_ARCH
-          R"(\dbghelp.dll)");
-      const fs::path DefaultSymsrvLocation(
-          R"(c:\program Files (x86)\windows kits\10\debuggers\)" SYMBOLIZER_ARCH
-          R"(\symsrv.dll)");
+      const fs::path DbgDllLocation(DefaultDbgDllLocation / Dll);
+      if (!fs::exists(DbgDllLocation)) {
 
-      const bool Dbghelp = fs::exists(DefaultDbghelpLocation);
-      const bool Symsrv = fs::exists(DefaultSymsrvLocation);
+        //
+        // If it doesn't exist we have to exit.
+        //
 
-      //
-      // If they don't exist and we haven't them ourselves, then we have to
-      // exit.
-      //
-
-      if (!Dbghelp || !Symsrv) {
-        printf("The debugger class expects dbghelp.dll / symsrv.dll in the "
+        printf("The debugger class expects debug dlls in the "
                "directory "
                "where the application is running from.\n");
         return false;
       }
 
       //
-      // Sounds like we are able to fix the problem ourselves. Copy the files in
-      // the directory where the application is running from and move on!
+      // Sounds like we are able to fix the problem ourselves. Copy the files
+      // in the directory where the application is running from and move on!
       //
 
-      fs::copy(DefaultDbghelpLocation, ParentDir);
-      fs::copy(DefaultSymsrvLocation, ParentDir);
-      printf("Copied dbghelp and symsrv.dll from default location into the "
-             "executable directory..\n");
+      fs::copy(DbgDllLocation, ParentDir);
+      printf("Copied %s into the "
+             "executable directory..\n",
+             DbgDllLocation.generic_string().c_str());
     }
 
     //
