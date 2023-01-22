@@ -5,8 +5,6 @@
 #include "dbgeng_t.h"
 #include <CLI/CLI.hpp>
 #include <chrono>
-#include <cstdio>
-#include <cstdlib>
 #include <filesystem>
 #include <fmt/os.h>
 #include <fmt/printf.h>
@@ -431,6 +429,7 @@ int main(int argc, char *argv[]) {
 
     fs::path Output;
     if (OutputIsDirectory) {
+
       //
       // If the output is a directory then generate an output file path.
       //
@@ -438,6 +437,7 @@ int main(int argc, char *argv[]) {
       Output =
           Opts.Output / fmt::format("{}.symbolizer", Input.filename().string());
     } else if (OutputDoesntExist || OutputIsFile) {
+
       //
       // There are two cases to consider here:
       //   - Either it is a path to a file that doesn't exist yet as we'll
@@ -448,6 +448,7 @@ int main(int argc, char *argv[]) {
 
       Output = Opts.Output;
     } else {
+
       //
       // It is empty, data will be dumped on stdout.
       //
