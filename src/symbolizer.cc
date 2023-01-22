@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fmt/os.h>
 #include <fmt/printf.h>
 #include <optional>
 #include <string>
@@ -208,12 +209,9 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
   //
 
   const bool OutputIsStdout = Output.empty();
-  FILE *Out = OutputIsStdout ? stdout : fopen(Output.string().c_str(), "w");
-  if (Out == nullptr) {
-    CloseHandle(TraceFile);
-    CloseHandle(Mapping);
-    fmt::print("Could not open output file {}\n", Output.string());
-    return false;
+  std::optional<fmt::v8::ostream> Out;
+  if (!OutputIsStdout) {
+    Out.emplace(fmt::output_file(Output.string()));
   }
 
   //
@@ -269,20 +267,28 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
     //
 
     if (Opts.LineNumbers) {
-      fmt::print(Out, "l{}: ", LineNumber);
+      if (OutputIsStdout) {
+        fmt::print("l{}: ", LineNumber);
+      } else {
+        Out->print("l{}: ", LineNumber);
+      }
     }
 
     //
     // Write the symbolized address into the output trace.
     //
 
-    fmt::print(Out, "{}\n", AddressSymbolized->get());
+    if (OutputIsStdout) {
+      fmt::print("{}\n", AddressSymbolized->get());
+    } else {
+      Out->print("{}\n", AddressSymbolized->get());
+    }
+
     NumberSymbolizedLines++;
   }
 
   Stats.NumberSymbolizedLines += NumberSymbolizedLines;
   Stats.NumberFailedSymbolization += NumberFailedSymbolization;
-  fclose(Out);
   CloseHandle(TraceFile);
   CloseHandle(Mapping);
   return true;
