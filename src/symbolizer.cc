@@ -19,6 +19,25 @@
 namespace fs = std::filesystem;
 namespace chrono = std::chrono;
 
+//
+// Utility to call a cleaner on scope exit.
+//
+
+template <typename F_t> struct Finally_t {
+  F_t f_;
+  Finally_t(F_t &&f) noexcept : f_(f) {}
+  ~Finally_t() noexcept { f_(); }
+};
+
+template <typename F_t> [[nodiscard]] auto finally(F_t &&f) noexcept {
+  return Finally_t(std::move(f));
+}
+
+//
+// Utilities made to display seconds / numbers in a 'cleaner' way (w/ a unit,
+// etc.).
+//
+
 struct SecondsHuman_t {
   double Value;
   const char *Unit;
@@ -46,13 +65,7 @@ struct fmt::formatter<SecondsHuman_t> : fmt::formatter<std::string> {
   }
 };
 
-[[nodiscard]] chrono::seconds
-SecondsSince(const chrono::high_resolution_clock::time_point &Since) {
-  const auto &Now = chrono::high_resolution_clock::now();
-  return chrono::duration_cast<chrono::seconds>(Now - Since);
-}
-
-[[nodiscard]] NumberHuman_t NumberToHuman(const uint64_t N_) {
+[[nodiscard]] constexpr NumberHuman_t NumberToHuman(const uint64_t N_) {
   const char *Unit = "";
   double N = double(N_);
   const uint64_t K = 1'000;
@@ -68,7 +81,8 @@ SecondsSince(const chrono::high_resolution_clock::time_point &Since) {
   return {N, Unit};
 }
 
-[[nodiscard]] SecondsHuman_t SecondsToHuman(const chrono::seconds &Seconds) {
+[[nodiscard]] constexpr SecondsHuman_t
+SecondsToHuman(const chrono::seconds &Seconds) {
   const char *Unit = "s";
   double SecondNumber = double(Seconds.count());
   const double M = 60;
@@ -86,6 +100,16 @@ SecondsSince(const chrono::high_resolution_clock::time_point &Since) {
   }
 
   return {SecondNumber, Unit};
+}
+
+//
+// Utility to calculate how many seconds since a past time point.
+//
+
+[[nodiscard]] chrono::seconds
+SecondsSince(const chrono::high_resolution_clock::time_point &Since) {
+  const auto &Now = chrono::high_resolution_clock::now();
+  return chrono::duration_cast<chrono::seconds>(Now - Since);
 }
 
 //
@@ -186,22 +210,25 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
     return false;
   }
 
+  auto CloseTraceFile = finally([&] { CloseHandle(TraceFile); });
+
   HANDLE Mapping =
       CreateFileMappingA(TraceFile, nullptr, PAGE_READONLY, 0, 0, nullptr);
 
   if (Mapping == INVALID_HANDLE_VALUE) {
-    CloseHandle(TraceFile);
     fmt::print("Could not create a mapping\n");
     return false;
   }
 
-  PVOID View = (char *)MapViewOfFile(Mapping, FILE_MAP_READ, 0, 0, 0);
+  auto CloseMapping = finally([&] { CloseHandle(Mapping); });
+
+  PVOID View = MapViewOfFile(Mapping, FILE_MAP_READ, 0, 0, 0);
   if (View == nullptr) {
-    CloseHandle(TraceFile);
-    CloseHandle(Mapping);
     fmt::print("Could not map a view of the mapping\n");
     return false;
   }
+
+  auto UnmapView = finally([&] { UnmapViewOfFile(View); });
 
   //
   // Open the output trace file; if we are not dumping data on stdout, then
@@ -289,8 +316,6 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
 
   Stats.NumberSymbolizedLines += NumberSymbolizedLines;
   Stats.NumberFailedSymbolization += NumberFailedSymbolization;
-  CloseHandle(TraceFile);
-  CloseHandle(Mapping);
   return true;
 }
 
