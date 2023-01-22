@@ -258,7 +258,7 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
 
     if (Opts.Max > 0 && NumberSymbolizedLines >= Opts.Max) {
       fmt::print("Hit the maximum number of symbolized lines {}, exiting\n",
-                 Opts.Max);
+                 NumberToHuman(Opts.Max));
       break;
     }
 
