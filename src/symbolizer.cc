@@ -224,7 +224,8 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
   uint64_t NumberFailedSymbolization = 0;
   char *Line = (char *)View;
   char *LineFeed = nullptr;
-  for (uint64_t LineNumber = 0; (LineFeed = strchr(Line, '\n')); LineNumber++) {
+  for (uint64_t LineNumber = 0; (LineFeed = strchr(Line, '\n')) != nullptr;
+       LineNumber++) {
 
     //
     // Do we have a max value, and if so have we hit it yet?

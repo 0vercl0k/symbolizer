@@ -258,8 +258,8 @@ public:
   // |Style|.
   //
 
-  std::optional<std::string> Symbolize(const uint64_t SymbolAddress,
-                                       const TraceStyle_t Style) {
+  std::optional<std::reference_wrapper<std::string>>
+  Symbolize(const uint64_t SymbolAddress, const TraceStyle_t Style) {
     //
     // Fast path for the addresses we have symbolized already.
     //
@@ -272,9 +272,9 @@ public:
     // Slow path, we need to ask dbgeng..
     //
 
-    const auto Res = Style == TraceStyle_t::Modoff
-                         ? SymbolizeModoff(SymbolAddress)
-                         : SymbolizeFull(SymbolAddress);
+    const auto &Res = Style == TraceStyle_t::Modoff
+                          ? SymbolizeModoff(SymbolAddress)
+                          : SymbolizeFull(SymbolAddress);
 
     //
     // If there has been an issue during symbolization, bail as it is not
@@ -282,14 +282,14 @@ public:
     //
 
     if (!Res) {
-      return std::nullopt;
+      return {};
     }
 
     //
     // Feed the result into the cache.
     //
 
-    Cache_.emplace(SymbolAddress, Res.value());
+    Cache_.emplace(SymbolAddress, *Res);
 
     //
     // Return the entry directly from the cache.
@@ -317,7 +317,7 @@ private:
         Symbols_->GetModuleByOffset(SymbolAddress, 0, &Index, &Base);
     if (FAILED(Status)) {
       fmt::print("GetModuleByOffset failed with hr={}\n", Status);
-      return std::nullopt;
+      return {};
     }
 
     ULONG NameSize;
@@ -325,7 +325,7 @@ private:
                                            &Buffer[0], NameSizeMax, &NameSize);
     if (FAILED(Status)) {
       fmt::print("GetModuleNameString failed with hr={}\n", Status);
-      return std::nullopt;
+      return {};
     }
 
     const uint64_t Offset = SymbolAddress - Base;
