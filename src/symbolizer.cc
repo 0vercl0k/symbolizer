@@ -1,15 +1,13 @@
 // Axel '0vercl0k' Souchet - September 11 2020
-//#define SYMBOLIZER_DEBUG
+// #define SYMBOLIZER_DEBUG
 #define _CRT_SECURE_NO_WARNINGS
 
 #include "dbgeng_t.h"
 #include <CLI/CLI.hpp>
 #include <chrono>
-#include <cinttypes>
-#include <cstdio>
-#include <cstdlib>
 #include <filesystem>
-#include <fstream>
+#include <fmt/os.h>
+#include <fmt/printf.h>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -18,6 +16,99 @@
 
 namespace fs = std::filesystem;
 namespace chrono = std::chrono;
+
+//
+// Utility to call a cleaner on scope exit.
+//
+
+template <typename F_t> struct Finally_t {
+  F_t f_;
+  Finally_t(F_t &&f) noexcept : f_(f) {}
+  ~Finally_t() noexcept { f_(); }
+};
+
+template <typename F_t> [[nodiscard]] auto finally(F_t &&f) noexcept {
+  return Finally_t(std::move(f));
+}
+
+//
+// Utilities made to display seconds / numbers in a 'cleaner' way (w/ a unit,
+// etc.).
+//
+
+struct SecondsHuman_t {
+  double Value;
+  const char *Unit;
+};
+
+struct NumberHuman_t {
+  double Value;
+  const char *Unit;
+};
+
+template <> struct fmt::formatter<NumberHuman_t> : fmt::formatter<std::string> {
+  template <typename FormatContext>
+  auto format(const NumberHuman_t &Number, FormatContext &Ctx) const
+      -> decltype(Ctx.out()) {
+    return fmt::format_to(Ctx.out(), "{:.1f}{}", Number.Value, Number.Unit);
+  }
+};
+
+template <>
+struct fmt::formatter<SecondsHuman_t> : fmt::formatter<std::string> {
+  template <typename FormatContext>
+  auto format(const SecondsHuman_t &Micro, FormatContext &Ctx) const
+      -> decltype(Ctx.out()) {
+    return fmt::format_to(Ctx.out(), "{:.1f}{}", Micro.Value, Micro.Unit);
+  }
+};
+
+[[nodiscard]] constexpr NumberHuman_t NumberToHuman(const uint64_t N_) {
+  const char *Unit = "";
+  double N = double(N_);
+  const uint64_t K = 1'000;
+  const uint64_t M = K * K;
+  if (N > M) {
+    Unit = "m";
+    N /= M;
+  } else if (N > K) {
+    Unit = "k";
+    N /= K;
+  }
+
+  return {N, Unit};
+}
+
+[[nodiscard]] constexpr SecondsHuman_t
+SecondsToHuman(const chrono::seconds &Seconds) {
+  const char *Unit = "s";
+  double SecondNumber = double(Seconds.count());
+  const double M = 60;
+  const double H = M * 60;
+  const double D = H * 24;
+  if (SecondNumber >= D) {
+    Unit = "d";
+    SecondNumber /= D;
+  } else if (SecondNumber >= H) {
+    Unit = "hr";
+    SecondNumber /= H;
+  } else if (SecondNumber >= M) {
+    Unit = "min";
+    SecondNumber /= M;
+  }
+
+  return {SecondNumber, Unit};
+}
+
+//
+// Utility to calculate how many seconds since a past time point.
+//
+
+[[nodiscard]] chrono::seconds
+SecondsSince(const chrono::high_resolution_clock::time_point &Since) {
+  const auto &Now = chrono::high_resolution_clock::now();
+  return chrono::duration_cast<chrono::seconds>(Now - Since);
+}
 
 //
 // The various commad line options that Symbolizer supports.
@@ -108,38 +199,45 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
   // Open the input trace file.
   //
 
-  std::ifstream TraceFile(Input);
-  if (!TraceFile.good()) {
-    printf("Could not open input %s\n", Input.string().c_str());
+  HANDLE TraceFile =
+      CreateFileA(Input.string().c_str(), GENERIC_READ, FILE_SHARE_READ,
+                  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+
+  if (TraceFile == INVALID_HANDLE_VALUE) {
+    fmt::print("Could not open input {}\n", Input.string());
     return false;
   }
 
+  auto CloseTraceFile = finally([&] { CloseHandle(TraceFile); });
+
+  HANDLE Mapping =
+      CreateFileMappingA(TraceFile, nullptr, PAGE_READONLY, 0, 0, nullptr);
+
+  if (Mapping == INVALID_HANDLE_VALUE) {
+    fmt::print("Could not create a mapping\n");
+    return false;
+  }
+
+  auto CloseMapping = finally([&] { CloseHandle(Mapping); });
+
+  PVOID View = MapViewOfFile(Mapping, FILE_MAP_READ, 0, 0, 0);
+  if (View == nullptr) {
+    fmt::print("Could not map a view of the mapping\n");
+    return false;
+  }
+
+  auto UnmapView = finally([&] { UnmapViewOfFile(View); });
+
   //
-  // Open the output trace file.
+  // Open the output trace file; if we are not dumping data on stdout, then
+  // let's actually open an output file.
   //
 
   const bool OutputIsStdout = Output.empty();
-  std::ofstream OutFile;
-
-  //
-  // If we are not dumping data on stdout, then let's actually open an output
-  // file.
-  //
-
+  std::optional<fmt::v8::ostream> Out;
   if (!OutputIsStdout) {
-    OutFile.open(Output);
-    if (!OutFile.good()) {
-      printf("Could not open output file %s\n", Output.string().c_str());
-      return false;
-    }
+    Out.emplace(fmt::output_file(Output.string()));
   }
-
-  //
-  // We use this stream to be able to manipulate std::cout and the file the same
-  // way.
-  //
-
-  std::basic_ostream<char> &OutStream = OutputIsStdout ? std::cout : OutFile;
 
   //
   // Read the trace file line by line.
@@ -147,15 +245,18 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
 
   uint64_t NumberSymbolizedLines = 0;
   uint64_t NumberFailedSymbolization = 0;
-  std::string Line;
-  for (uint64_t LineNumber = 0; std::getline(TraceFile, Line); LineNumber++) {
+  char *Line = (char *)View;
+  char *LineFeed = nullptr;
+  for (uint64_t LineNumber = 0; (LineFeed = strchr(Line, '\n')) != nullptr;
+       LineNumber++) {
 
     //
     // Do we have a max value, and if so have we hit it yet?
     //
 
     if (Opts.Max > 0 && NumberSymbolizedLines >= Opts.Max) {
-      printf("Hit the maximum number %" PRIu64 ", breaking out\n", Opts.Max);
+      fmt::print("Hit the maximum number of symbolized lines {}, exiting\n",
+                 NumberToHuman(Opts.Max));
       break;
     }
 
@@ -171,7 +272,8 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
     // Convert the line into an address.
     //
 
-    const uint64_t Address = std::strtoull(Line.c_str(), nullptr, 16);
+    const uint64_t Address = std::strtoull(Line, nullptr, 16);
+    Line = LineFeed + 1;
 
     //
     // Symbolize the address.
@@ -179,10 +281,8 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
 
     auto AddressSymbolized = Dbg.Symbolize(Address, Opts.Style);
     if (!AddressSymbolized.has_value()) {
-      printf("%s:%" PRIu64 ": Symbolization of %" PRIx64
-             " failed ('%s'), skipping\n",
-             Input.filename().string().c_str(), LineNumber, Address,
-             Line.c_str());
+      fmt::print("{}:{}: Symbolization of {} failed ('{}'), skipping\n",
+                 Input.filename().string(), LineNumber, Address, Line);
       NumberFailedSymbolization++;
       continue;
     }
@@ -192,14 +292,23 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
     //
 
     if (Opts.LineNumbers) {
-      OutStream << 'l' << LineNumber << ": ";
+      if (OutputIsStdout) {
+        fmt::print("l{}: ", LineNumber);
+      } else {
+        Out->print("l{}: ", LineNumber);
+      }
     }
 
     //
     // Write the symbolized address into the output trace.
     //
 
-    OutStream << AddressSymbolized->c_str() << '\n';
+    if (OutputIsStdout) {
+      fmt::print("{}\n", AddressSymbolized->get());
+    } else {
+      Out->print("{}\n", AddressSymbolized->get());
+    }
+
     NumberSymbolizedLines++;
   }
 
@@ -209,6 +318,7 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
 }
 
 int main(int argc, char *argv[]) {
+
   //
   // Set up the argument parsing.
   //
@@ -266,7 +376,7 @@ int main(int argc, char *argv[]) {
 
   DbgEng_t DbgEng;
   if (!DbgEng.Init(Opts.CrashdumpPath)) {
-    printf("Failed to initialize the debugger api.\n");
+    fmt::print("Failed to initialize the debugger api\n");
     return EXIT_FAILURE;
   }
 
@@ -282,8 +392,8 @@ int main(int argc, char *argv[]) {
     //
 
     if (!OutputIsDirectory && !OutputIsStdout) {
-      printf("When the input is a directory, the output can only be either "
-             "empty (for stdout) or a directory as well.\n");
+      fmt::print("When the input is a directory, the output can only be either "
+                 "empty (for stdout) or a directory as well\n");
     }
 
     const fs::directory_iterator DirIt(Opts.Input);
@@ -298,18 +408,18 @@ int main(int argc, char *argv[]) {
   // Symbolize each files.
   //
 
-  printf("Starting to process files..\n");
+  fmt::print("Starting to process files..\n");
   const auto Before = chrono::high_resolution_clock::now();
   for (const auto &Input : Inputs) {
 
     //
-    // If we run Symbolizer from the same directory for both inputs and outputs,
+    // If we run symbolizer from the same directory for both inputs and outputs,
     // we are going to see '.symbolizer' files into the input directory, so
     // let's just keep them instead of bailing.
     //
 
     if (Input.filename().string().ends_with(".symbolizer")) {
-      printf("Skipping %s..\n", Input.string().c_str());
+      fmt::print("Skipping %s..\n", Input.string().c_str());
       continue;
     }
 
@@ -319,14 +429,15 @@ int main(int argc, char *argv[]) {
 
     fs::path Output;
     if (OutputIsDirectory) {
+
       //
       // If the output is a directory then generate an output file path.
       //
 
-      const std::string InputFilename(Input.filename().string());
-      const std::string OutputFilename(InputFilename + ".symbolizer");
-      Output = Opts.Output / OutputFilename;
+      Output =
+          Opts.Output / fmt::format("{}.symbolizer", Input.filename().string());
     } else if (OutputDoesntExist || OutputIsFile) {
+
       //
       // There are two cases to consider here:
       //   - Either it is a path to a file that doesn't exist yet as we'll
@@ -337,6 +448,7 @@ int main(int argc, char *argv[]) {
 
       Output = Opts.Output;
     } else {
+
       //
       // It is empty, data will be dumped on stdout.
       //
@@ -350,13 +462,12 @@ int main(int argc, char *argv[]) {
 
     if (!OutputIsStdout && fs::exists(Output)) {
       if (!Opts.Overwrite) {
-        printf("The output file %s already exists, exiting.\n",
-               Output.string().c_str());
-        return EXIT_SUCCESS;
+        fmt::print("The output file {} already exists, continuing\n",
+                   Output.string());
+        continue;
       }
 
-      printf("The output file %s will be overwritten..\n",
-             Output.string().c_str());
+      fmt::print("The output file {} will be overwritten..\n", Output.string());
     }
 
     //
@@ -364,41 +475,27 @@ int main(int argc, char *argv[]) {
     //
 
     if (!SymbolizeFile(DbgEng, Input, Output)) {
-      printf("Parsing %s failed, exiting\n", Input.string().c_str());
+      fmt::print("Parsing {} failed, exiting\n", Input.string());
       break;
     }
 
     Stats.NumberFiles++;
-    printf("[%" PRIu64 " / %zd] %s done\r", Stats.NumberFiles, Inputs.size(),
-           Input.string().c_str());
+    fmt::print("[{} / {}] {} done\r", Stats.NumberFiles, Inputs.size(),
+               Input.string());
   }
 
-  printf("\n");
-
-  //
-  // Calculate the duration.
-  //
-
-  const auto After = chrono::high_resolution_clock::now();
-  auto Duration = chrono::duration_cast<chrono::seconds>(After - Before);
-
-  const char *Unit = "";
-  if (Stats.NumberSymbolizedLines >= 1'000'000) {
-    Stats.NumberSymbolizedLines /= 1'000'000;
-    Unit = "m";
-  } else if (Stats.NumberSymbolizedLines >= 1'000) {
-    Stats.NumberSymbolizedLines /= 1'000;
-    Unit = "k";
-  }
+  fmt::print("\n");
 
   //
   // Yay we made it to the end! Let's dump a few stats out.
   //
 
-  printf("Completed symbolization of %" PRIu64 "%s addresses (%" PRIu64
-         " failed) in %" PRId64 "s across %" PRIu64 " files.\n",
-         Stats.NumberSymbolizedLines, Unit, Stats.NumberFailedSymbolization,
-         Duration.count(), Stats.NumberFiles);
+  fmt::print("Completed symbolization of {} addresses ({} failed) in {} across "
+             "{} files.\n",
+             NumberToHuman(Stats.NumberSymbolizedLines),
+             NumberToHuman(Stats.NumberFailedSymbolization),
+             SecondsToHuman(SecondsSince(Before)),
+             NumberToHuman(Stats.NumberFiles));
 
   return EXIT_SUCCESS;
 }

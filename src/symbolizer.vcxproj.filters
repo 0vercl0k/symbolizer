@@ -18,6 +18,9 @@
     <ClCompile Include="symbolizer.cc">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\libs\fmt\src\os.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dbgeng_t.h">

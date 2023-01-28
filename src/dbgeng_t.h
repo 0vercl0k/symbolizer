@@ -1,10 +1,9 @@
 // Axel '0vercl0k' Souchet - September 12 2020
 #pragma once
-#include <cinttypes>
 #include <cstdint>
-#include <cstdio>
 #include <dbgeng.h>
 #include <filesystem>
+#include <fmt/printf.h>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -70,7 +69,7 @@ class DbgEng_t {
     }
 
     STDMETHODIMP Output(ULONG, PCSTR Text) noexcept override {
-      printf("%s", Text);
+      fmt::print("{}", Text);
       return S_OK;
     }
   };
@@ -135,7 +134,7 @@ public:
     char ExePathBuffer[MAX_PATH];
     if (!GetModuleFileNameA(nullptr, &ExePathBuffer[0],
                             sizeof(ExePathBuffer))) {
-      printf("GetModuleFileNameA failed.\n");
+      fmt::print("GetModuleFileNameA failed\n");
       return false;
     }
 
@@ -166,9 +165,8 @@ public:
         // If it doesn't exist we have to exit.
         //
 
-        printf("The debugger class expects debug dlls in the "
-               "directory "
-               "where the application is running from.\n");
+        fmt::print("The debugger class expects debug dlls in the directory "
+                   "where the application is running from.\n");
         return false;
       }
 
@@ -178,33 +176,33 @@ public:
       //
 
       fs::copy(DbgDllLocation, ParentDir);
-      printf("Copied %s into the "
-             "executable directory..\n",
-             DbgDllLocation.generic_string().c_str());
+      fmt::print("Copied {} into the "
+                 "executable directory..\n",
+                 DbgDllLocation.generic_string().c_str());
     }
 
     //
     // Initialize the various COM interfaces that we need.
     //
 
-    printf("Initializing the debugger instance..\n");
+    fmt::print("Initializing the debugger instance..\n");
     HRESULT Status = DebugCreate(__uuidof(IDebugClient), (void **)&Client_);
     if (FAILED(Status)) {
-      printf("DebugCreate failed with hr=%lx\n", Status);
+      fmt::print("DebugCreate failed with hr={}\n", Status);
       return false;
     }
 
     Status =
         Client_->QueryInterface(__uuidof(IDebugControl), (void **)&Control_);
     if (FAILED(Status)) {
-      printf("QueryInterface/IDebugControl failed with hr=%lx\n", Status);
+      fmt::print("QueryInterface/IDebugControl failed with hr={}\n", Status);
       return false;
     }
 
     Status =
         Client_->QueryInterface(__uuidof(IDebugSymbols3), (void **)&Symbols_);
     if (FAILED(Status)) {
-      printf("QueryInterface/IDebugSymbols failed with hr=%lx\n", Status);
+      fmt::print("QueryInterface/IDebugSymbols failed with hr={}\n", Status);
       return false;
     }
 
@@ -216,7 +214,7 @@ public:
     const uint32_t SYMOPT_DEBUG = 0x80000000;
     Status = Symbols_->SetSymbolOptions(SYMOPT_DEBUG);
     if (FAILED(Status)) {
-      printf("IDebugSymbols::SetSymbolOptions failed with hr=%lx\n", Status);
+      fmt::print("IDebugSymbols::SetSymbolOptions failed with hr={}\n", Status);
       return false;
     }
 
@@ -227,12 +225,12 @@ public:
     // We can now open the crash-dump using the dbghelp APIs.
     //
 
-    printf("Opening the dump file..\n");
+    fmt::print("Opening the dump file..\n");
     const std::string &DumpFileString = DumpPath.string();
     const char *DumpFileA = DumpFileString.c_str();
     Status = Client_->OpenDumpFile(DumpFileA);
     if (FAILED(Status)) {
-      printf("OpenDumpFile(h%s) failed with hr=%lx\n", DumpFileA, Status);
+      fmt::print("OpenDumpFile({}) failed with hr={}\n", DumpFileA, Status);
       return false;
     }
 
@@ -248,7 +246,7 @@ public:
 
     Status = WaitForEvent();
     if (FAILED(Status)) {
-      printf("WaitForEvent for OpenDumpFile failed with hr=%lx\n", Status);
+      fmt::print("WaitForEvent for OpenDumpFile failed with hr={}\n", Status);
       return false;
     }
 
@@ -260,8 +258,8 @@ public:
   // |Style|.
   //
 
-  std::optional<std::string> Symbolize(const uint64_t SymbolAddress,
-                                       const TraceStyle_t Style) {
+  std::optional<std::reference_wrapper<std::string>>
+  Symbolize(const uint64_t SymbolAddress, const TraceStyle_t Style) {
     //
     // Fast path for the addresses we have symbolized already.
     //
@@ -274,9 +272,9 @@ public:
     // Slow path, we need to ask dbgeng..
     //
 
-    const auto Res = Style == TraceStyle_t::Modoff
-                         ? SymbolizeModoff(SymbolAddress)
-                         : SymbolizeFull(SymbolAddress);
+    const auto &Res = Style == TraceStyle_t::Modoff
+                          ? SymbolizeModoff(SymbolAddress)
+                          : SymbolizeFull(SymbolAddress);
 
     //
     // If there has been an issue during symbolization, bail as it is not
@@ -284,14 +282,14 @@ public:
     //
 
     if (!Res) {
-      return std::nullopt;
+      return {};
     }
 
     //
     // Feed the result into the cache.
     //
 
-    Cache_.emplace(SymbolAddress, Res.value());
+    Cache_.emplace(SymbolAddress, *Res);
 
     //
     // Return the entry directly from the cache.
@@ -318,21 +316,20 @@ private:
     HRESULT Status =
         Symbols_->GetModuleByOffset(SymbolAddress, 0, &Index, &Base);
     if (FAILED(Status)) {
-      printf("GetModuleByOffset failed with hr=%lx\n", Status);
-      return std::nullopt;
+      fmt::print("GetModuleByOffset failed with hr={}\n", Status);
+      return {};
     }
 
     ULONG NameSize;
     Status = Symbols_->GetModuleNameString(DEBUG_MODNAME_MODULE, Index, Base,
                                            &Buffer[0], NameSizeMax, &NameSize);
     if (FAILED(Status)) {
-      printf("GetModuleNameString failed with hr=%lx\n", Status);
-      return std::nullopt;
+      fmt::print("GetModuleNameString failed with hr={}\n", Status);
+      return {};
     }
 
     const uint64_t Offset = SymbolAddress - Base;
-    std::snprintf(&Buffer[0], NameSizeMax, "%s+0x%" PRIx64, &Buffer[0], Offset);
-    return std::string(Buffer);
+    return fmt::format("{}+0x{:x}", Buffer, Offset);
   }
 
   //
@@ -351,13 +348,11 @@ private:
     const HRESULT Status = Symbols_->GetNameByOffset(
         SymbolAddress, &Buffer[0], NameSizeMax, nullptr, &Displacement);
     if (FAILED(Status)) {
-      printf("GetNameByOffset failed with hr=%lx\n", Status);
-      return std::nullopt;
+      fmt::print("GetNameByOffset failed with hr={}\n", Status);
+      return {};
     }
 
-    std::snprintf(&Buffer[0], NameSizeMax, "%s+0x%" PRIx64, &Buffer[0],
-                  Displacement);
-    return std::string(Buffer);
+    return fmt::format("{}+0x{:x}", Buffer, Displacement);
   }
 
   //
@@ -367,7 +362,7 @@ private:
   HRESULT WaitForEvent() const noexcept {
     const HRESULT Status = Control_->WaitForEvent(DEBUG_WAIT_DEFAULT, INFINITE);
     if (FAILED(Status)) {
-      printf("Execute::WaitForEvent failed with %lx\n", Status);
+      fmt::print("Execute::WaitForEvent failed with {}\n", Status);
     }
     return Status;
   }
