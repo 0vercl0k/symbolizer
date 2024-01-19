@@ -281,8 +281,8 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
 
     auto AddressSymbolized = Dbg.Symbolize(Address, Opts.Style);
     if (!AddressSymbolized.has_value()) {
-      fmt::print("{}:{}: Symbolization of {} failed ('{}'), skipping\n",
-                 Input.filename().string(), LineNumber, Address, Line);
+      fmt::print("{}:{}: Symbolization of {} failed, skipping\n",
+                 Input.filename().string(), LineNumber, Address);
       NumberFailedSymbolization++;
       continue;
     }
