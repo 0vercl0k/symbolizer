@@ -5,6 +5,7 @@
 #include "dbgeng_t.h"
 #include <CLI/CLI.hpp>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fmt/os.h>
 #include <fmt/printf.h>
@@ -234,7 +235,7 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
   //
 
   const bool OutputIsStdout = Output.empty();
-  std::optional<fmt::v8::ostream> Out;
+  std::optional<fmt::ostream> Out;
   if (!OutputIsStdout) {
     Out.emplace(fmt::output_file(Output.string()));
   }
@@ -273,6 +274,7 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
     //
 
     const uint64_t Address = std::strtoull(Line, nullptr, 16);
+    const auto *LastLine = Line;
     Line = LineFeed + 1;
 
     //
@@ -281,8 +283,21 @@ bool SymbolizeFile(DbgEng_t &Dbg, const fs::path &Input,
 
     auto AddressSymbolized = Dbg.Symbolize(Address, Opts.Style);
     if (!AddressSymbolized.has_value()) {
+
+      //
+      // We're doing a best effort thing here. Basically, if there's a carriage
+      // return right before the line feed, then the carriage return get
+      // displayed below which kinda ruins the error output. So if there's a
+      // carriage return, we'll just consider it the end of the line (vs the
+      // line feed).
+      //
+
+      const auto *CarriageReturn = strchr(LastLine, '\r');
+      const std::string_view FailedLine(
+          LastLine, CarriageReturn ? CarriageReturn : LineFeed);
+
       fmt::print("{}:{}: Symbolization of {} failed ('{}'), skipping\n",
-                 Input.filename().string(), LineNumber, Address, Line);
+                 Input.filename().string(), LineNumber, Address, FailedLine);
       NumberFailedSymbolization++;
       continue;
     }
