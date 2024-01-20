@@ -89,7 +89,7 @@ As opposed to batch mode, you might be interested in just symbolizing a single t
 Clone the repository with:
 
 ```
-(base) > git clone --recurse-submodules https://github.com/0vercl0k/symbolizer.git
+(base) > git clone https://github.com/0vercl0k/symbolizer.git
 ```
 
 You can open the Visual Studio solution `symbolizer.sln` or build it via the command line with:
